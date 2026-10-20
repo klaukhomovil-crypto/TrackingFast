@@ -1,11 +1,23 @@
 import re
 import time
+import subprocess
+import sys
 import pandas as pd
 import streamlit as st
 from datetime import datetime
 from playwright.sync_api import sync_playwright
 
 st.set_page_config(page_title="Rastreador LATAM Cargo - Oficial", layout="wide")
+
+# --- INSTALACIÓN AUTOMÁTICA DE PLAYWRIGHT PARA STREAMLIT CLOUD ---
+@st.cache_resource
+def instalar_playwright():
+    try:
+        subprocess.run([sys.executable, "-m", "playwright", "install", "chromium"], check=True)
+    except Exception as e:
+        print(f"Error instalando navegador: {e}")
+
+instalar_playwright()
 
 st.title("📦 Sistema de Monitoreo de Carga Aérea - LATAM Cargo")
 st.write("Monitoreo rápido en tiempo real directamente desde el portal oficial de LATAM Cargo.")
@@ -49,10 +61,6 @@ if boton_agregar:
 
 # --- FUNCIÓN DE EXTRACCIÓN RÁPIDA ---
 def consultar_latam_rapido(guia):
-    """
-    Versión optimizada y rápida para extraer los datos de LATAM Cargo
-    reduciendo los tiempos muertos de espera.
-    """
     prefijo, correlativo = guia.split("-")
     url = "https://www.latamcargo.com/es/trackshipment"
     hora_consulta = datetime.now().strftime("%H:%M:%S")
@@ -70,10 +78,10 @@ def consultar_latam_rapido(guia):
     
     try:
         with sync_playwright() as p:
-            browser = p.chromium.launch(headless=True, args=["--disable-images", "--disable-gpu"])
+            browser = p.chromium.launch(headless=True, args=["--disable-images", "--disable-gpu", "--no-sandbox"])
             page = browser.new_page()
             
-            page.goto(url, timeout=20000)
+            page.goto(url, timeout=25000)
             page.wait_for_timeout(1500)
             
             # Llenar inputs de prefijo y documento
@@ -91,10 +99,8 @@ def consultar_latam_rapido(guia):
             except:
                 page.keyboard.press("Enter")
 
-            # Espera optimizada a 4.5 segundos
             page.wait_for_timeout(4500)
             
-            # Extraer todas las celdas de las tablas o filas
             datos_tabla = page.evaluate("""() => {
                 const rows = document.querySelectorAll('tr, .row, .table-row');
                 const results = [];
@@ -110,7 +116,6 @@ def consultar_latam_rapido(guia):
             
             texto_completo = page.inner_text("body")
             
-            # 1. Definir el Estado principal
             if "Entregado" in texto_completo or "Delivered" in texto_completo:
                 resultado["Estado"] = "✅ Entregado"
             elif "En tránsito" in texto_completo or "Transit" in texto_completo:
@@ -120,7 +125,6 @@ def consultar_latam_rapido(guia):
             else:
                 resultado["Estado"] = "📋 Procesado"
 
-            # 2. Buscar valores en la tabla
             for fila in datos_tabla:
                 fila_str = " ".join(fila)
                 if "MIA" in fila_str or "LIM" in fila_str or "LA-" in fila_str or "XL" in fila_str:
@@ -140,7 +144,6 @@ def consultar_latam_rapido(guia):
                         elif item.isdigit() and 0 < int(item) < 10000 and resultado["Piezas"] == "N/D":
                             resultado["Piezas"] = item
 
-            # Respaldo por bloques de texto rápidos
             if resultado["Origen"] == "N/D" or resultado["Vuelos"] == "N/D":
                 lineas = [l.strip() for l in texto_completo.split("\n") if l.strip()]
                 for i, l in enumerate(lineas):
@@ -172,7 +175,6 @@ if st.button("🔄 Consultar / Actualizar Ahora"):
             st.session_state.guias_db[g] = consultar_latam_rapido(g)
     st.rerun()
 
-# Mostrar la Tabla Resultante
 if st.session_state.guias_db:
     df = pd.DataFrame.from_dict(st.session_state.guias_db, orient="index")
     df.index.name = "Número de Guía (AWB)"
@@ -180,7 +182,6 @@ if st.session_state.guias_db:
 else:
     st.info("Agrega guías arriba para comenzar el monitoreo.")
 
-# Temporizador de 1 minuto (60 segundos)
 if auto_refresh and st.session_state.guias_db:
     time.sleep(60)
     for g in list(st.session_state.guias_db.keys()):
