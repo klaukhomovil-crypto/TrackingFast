@@ -139,8 +139,8 @@ def consultar_latam_rapido(guia):
                         elif resultado["Destino"] == "N/D" and item != resultado["Origen"]:
                             resultado["Destino"] = item
                     
-                    # 2. Vuelos (Estricto para evitar confundir con fechas: ej. LA-2481, XL-713)
-                    elif re.match(r'^(LA|XL|UC|4C)[\-\s]?\d{3,4}$', item, re.IGNORECASE):
+                    # 2. Vuelos (Actualizado para aceptar alfanuméricos como L7-2512, LA-2481, etc.)
+                    elif re.match(r'^[A-Z0-9]{2,3}[\-\s]?\d{3,4}$', item, re.IGNORECASE):
                         resultado["Vuelos"] = item.upper()
                         
                     # 3. Fechas ETD / ETA (Formato completo con hora, ej: 25-Oct-2026 17:05)
