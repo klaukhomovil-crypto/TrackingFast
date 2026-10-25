@@ -8,37 +8,7 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 from playwright.sync_api import sync_playwright
 
-st.set_page_config(
-    page_title="LATAM Tracker", 
-    layout="wide",
-    initial_sidebar_state="collapsed"
-)
-
-# --- ESTILOS CSS PARA ADAPTAR A PANTALLAS MÓVILES Y ELIMINAR SCROLL INNECESARIO ---
-st.markdown("""
-    <style>
-        /* Reducir márgenes superiores e inferiores en la versión móvil */
-        .block-container {
-            padding-top: 1.5rem !important;
-            padding-bottom: 1rem !important;
-            padding-left: 0.8rem !important;
-            padding-right: 0.8rem !important;
-        }
-        /* Ajustar tamaño de títulos para que no ocupen media pantalla */
-        h1 { font-size: 1.5rem !important; margin-bottom: 0.2rem !important; }
-        h3, .stSubheader { font-size: 1.1rem !important; }
-        /* Botones más compactos */
-        .stButton>button {
-            width: 100%;
-            border-radius: 8px;
-            padding-top: 0.4rem;
-            padding-bottom: 0.4rem;
-        }
-        /* Ocultar pie de página de Streamlit para ganar espacio vertical */
-        footer {visibility: hidden;}
-        #MainMenu {visibility: hidden;}
-    </style>
-""", unsafe_allow_innerHTML=True)
+st.set_page_config(page_title="Rastreador LATAM Cargo - Oficial", layout="wide")
 
 # --- INSTALACIÓN AUTOMÁTICA DE PLAYWRIGHT PARA STREAMLIT CLOUD ---
 @st.cache_resource
@@ -50,19 +20,23 @@ def instalar_playwright():
 
 instalar_playwright()
 
-st.title("📦 Monitoreo LATAM Cargo")
+st.title("📦 Sistema de Monitoreo de Carga Aérea - LATAM Cargo")
+st.write("Monitoreo rápido en tiempo real directamente desde el portal oficial de LATAM Cargo.")
 
 if "guias_db" not in st.session_state:
     st.session_state.guias_db = {}
 
+# Control del estado del campo de texto
 if "input_guia" not in st.session_state:
     st.session_state.input_guia = ""
 
-# --- FASE 1: INGRESO DE GUÍA ---
-col1, col2 = st.columns([2, 1])
+# --- FASE 1: INGRESO Y VALIDACIÓN DE GUÍA ---
+st.subheader("1. Ingrese Número de Guía")
+
+col1, col2 = st.columns([3, 1])
 with col1:
     numero_guia = st.text_input(
-        "Ingrese Guía:", 
+        "Número de Guía (Formato XXX-XXXXXXXX):", 
         value=st.session_state.input_guia, 
         placeholder="XXX-XXXXXXXX",
         key="widget_guia"
@@ -71,7 +45,7 @@ with col1:
 with col2:
     st.write(" ")
     st.write(" ")
-    boton_agregar = st.button("➕ Agregar")
+    boton_agregar = st.button("➕ Agregar a Monitoreo")
 
 patron_guia = r"^\d{3}-\d{8}$"
 
@@ -89,19 +63,21 @@ if boton_agregar:
                 "Piezas": "Pendiente",
                 "Última Consulta": "Sin consultar"
             }
+            # Limpia el campo para la siguiente entrada
             st.session_state.input_guia = ""
-            st.success(f"Guía {guia_limpia} agregada.")
+            st.success(f"Guía {guia_limpia} agregada correctamente.")
             st.rerun()
         else:
-            st.warning("Esta guía ya está en la lista.")
+            st.warning("Esta guía ya está registrada en la lista.")
     else:
-        st.error("❌ Formato incorrecto (Ej: 045-56598360)")
+        st.error("❌ Formato incorrecto. Ejemplo válido: 045-56598360")
 
-# --- FUNCIÓN DE EXTRACCIÓN ---
+# --- FUNCIÓN DE EXTRACCIÓN PRECISA ---
 def consultar_latam_rapido(guia):
     prefijo, correlativo = guia.split("-")
     url = "https://www.latamcargo.com/es/trackshipment"
     
+    # Hora local (Perú/Sudamérica)
     try:
         zona_horaria = ZoneInfo("America/Lima")
         hora_consulta = datetime.now(zona_horaria).strftime("%H:%M:%S")
@@ -200,39 +176,42 @@ def consultar_latam_rapido(guia):
         resultado["Estado"] = f"Error: {str(e)[:30]}"
         return resultado
 
-# --- FASE 2: PANEL DE CONTROL ---
+# --- FASE 2: PANEL DE MONITOREO Y GESTIÓN ---
 st.divider()
+st.subheader("2. Panel de Control y Actualización Automática")
 
-col_act1, col_act2 = st.columns([1, 1])
-with col_act1:
-    auto_refresh = st.checkbox("🔄 Auto 1 min", value=False)
-with col_act2:
-    actualizar_ahora = st.button("🔄 Actualizar")
+auto_refresh = st.checkbox("🔄 Activar actualización automática cada 1 minuto", value=False)
+
+col_btn1, col_btn2 = st.columns([1, 4])
+with col_btn1:
+    actualizar_ahora = st.button("🔄 Consultar Ahora")
 
 if actualizar_ahora and st.session_state.guias_db:
-    with st.spinner("Consultando..."):
+    with st.spinner("Actualizando datos en tiempo real..."):
         for g in list(st.session_state.guias_db.keys()):
             st.session_state.guias_db[g] = consultar_latam_rapido(g)
+    st.success("¡Datos actualizados!")
     st.rerun()
 
 if st.session_state.guias_db:
     df = pd.DataFrame.from_dict(st.session_state.guias_db, orient="index")
-    df.index.name = "AWB"
-    # Tabla adaptada con altura controlada para evitar estirar la pantalla verticalmente
-    st.dataframe(df, use_container_width=True, height=200)
+    df.index.name = "Número de Guía (AWB)"
+    st.dataframe(df, use_container_width=True)
     
-    # --- ELIMINACIÓN COMPACTA ---
-    col_del1, col_del2 = st.columns([2, 1])
-    with col_del1:
-        guias_lista = list(st.session_state.guias_db.keys())
-        guia_a_borrar = st.selectbox("Borrar Guía:", options=guias_lista, label_visibility="collapsed")
-    with col_del2:
-        if st.button("❌ Borrar"):
-            if guia_a_borrar in st.session_state.guias_db:
-                del st.session_state.guias_db[guia_a_borrar]
-                st.rerun()
+    # --- SECCIÓN DE ELIMINACIÓN INDIVIDUAL ---
+    st.write("### 🗑️ Gestión de Guías Registradas")
+    st.write("Selecciona una guía de la lista para retirarla del monitoreo:")
+    
+    guias_lista = list(st.session_state.guias_db.keys())
+    guia_a_borrar = st.selectbox("Elegir Guía a Eliminar:", options=guias_lista)
+    
+    if st.button("❌ Eliminar Guía Seleccionada"):
+        if guia_a_borrar in st.session_state.guias_db:
+            del st.session_state.guias_db[guia_a_borrar]
+            st.success(f"La guía {guia_a_borrar} fue eliminada del panel.")
+            st.rerun()
 else:
-    st.info("Agrega guías arriba para monitorear.")
+    st.info("Agrega guías arriba para comenzar el monitoreo.")
 
 if auto_refresh and st.session_state.guias_db:
     time.sleep(60)
