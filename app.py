@@ -26,13 +26,22 @@ st.write("Monitoreo rápido en tiempo real directamente desde el portal oficial 
 if "guias_db" not in st.session_state:
     st.session_state.guias_db = {}
 
+# Inicializar la variable de control del input si no existe
+if "input_guia" not in st.session_state:
+    st.session_state.input_guia = ""
+
 # --- FASE 1: INGRESO Y VALIDACIÓN DE GUÍA ---
 st.subheader("1. Ingrese Número de Guía")
 
 col1, col2 = st.columns([3, 1])
 with col1:
-    # Campo de texto limpio por defecto para ingresar nuevas guías
-    numero_guia = st.text_input("Número de Guía (Formato XXX-XXXXXXXX):", value="", placeholder="045-56598360")
+    # Usamos session_state para controlar el texto y placeholder claro
+    numero_guia = st.text_input(
+        "Número de Guía (Formato XXX-XXXXXXXX):", 
+        value=st.session_state.input_guia, 
+        placeholder="XXX-XXXXXXXX",
+        key="widget_guia"
+    )
 
 with col2:
     st.write(" ")
@@ -55,7 +64,10 @@ if boton_agregar:
                 "Piezas": "Pendiente",
                 "Última Consulta": "Sin consultar"
             }
+            # Limpiamos el input en el session_state después de agregar con éxito
+            st.session_state.input_guia = ""
             st.success(f"Guía {guia_limpia} agregada correctamente.")
+            st.rerun()
         else:
             st.warning("Esta guía ya está registrada en la lista.")
     else:
@@ -167,8 +179,7 @@ def consultar_latam_rapido(guia):
 
 # --- FASE 2: PANEL DE MONITOREO Y GESTIÓN ---
 st.divider()
-# Título actualizado sin el texto "(Cada 1 min)", conservando toda la funcionalidad
-data_section_title = st.subheader("2. Panel de Control y Actualización Automática")
+st.subheader("2. Panel de Control y Actualización Automática")
 
 auto_refresh = st.checkbox("🔄 Activar actualización automática cada 1 minuto", value=False)
 
