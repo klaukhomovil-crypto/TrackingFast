@@ -132,29 +132,24 @@ def consultar_latam_rapido(guia):
 
             for fila in datos_tabla:
                 for item in fila:
-                    # 1. Origen y Destino (aeropuertos comunes)
                     if item in ["MIA", "LIM", "SCL", "UIO", "BOG", "EZE", "JFK", "VVI", "MDE"]:
                         if resultado["Origen"] == "N/D":
                             resultado["Origen"] = item
                         elif resultado["Destino"] == "N/D" and item != resultado["Origen"]:
                             resultado["Destino"] = item
                     
-                    # 2. Vuelos (Actualizado para aceptar alfanuméricos como L7-2512, LA-2481, etc.)
                     elif re.match(r'^[A-Z0-9]{2,3}[\-\s]?\d{3,4}$', item, re.IGNORECASE):
                         resultado["Vuelos"] = item.upper()
                         
-                    # 3. Fechas ETD / ETA (Formato completo con hora, ej: 25-Oct-2026 17:05)
                     elif re.search(r'\d{1,2}[\-\/][A-Za-z]{3}[\-\/]\d{4}\s\d{2}:\d{2}', item):
                         if resultado["ETD"] == "N/D":
                             resultado["ETD"] = item
                         elif resultado["ETA"] == "N/D":
                             resultado["ETA"] = item
                             
-                    # 4. Piezas (Números enteros razonables)
                     elif item.isdigit() and 0 < int(item) < 10000 and resultado["Piezas"] == "N/D":
                         resultado["Piezas"] = item
 
-            # Respaldo seguro si faltó fecha o vuelo en la tabla
             if resultado["ETD"] == "N/D":
                 fechas_encontradas = re.findall(r'\d{1,2}[\-\/][A-Za-z]{3}[\-\/]\d{4}\s\d{2}:\d{2}', texto_completo)
                 if len(fechas_encontradas) >= 1:
@@ -169,22 +164,41 @@ def consultar_latam_rapido(guia):
         resultado["Estado"] = f"Error: {str(e)[:30]}"
         return resultado
 
-# --- FASE 2: PANEL DE MONITOREO ---
+# --- FASE 2: PANEL DE MONITOREO Y GESTIÓN ---
 st.divider()
-st.subheader("2. Panel de Control y Actualización Automática (Cada 1 min)")
+st.subheader("2. Panel de Control y Actualización Automática")
 
 auto_refresh = st.checkbox("🔄 Activar actualización automática cada 1 minuto", value=False)
 
-if st.button("🔄 Consultar / Actualizar Ahora"):
-    with st.spinner("Consulta rápida en curso..."):
+col_btn1, col_btn2 = st.columns([1, 4])
+with col_btn1:
+    actualizar_ahora = st.button("🔄 Consultar Ahora")
+
+if actualizar_ahora and st.session_state.guias_db:
+    with st.spinner("Actualizando datos en tiempo real..."):
         for g in list(st.session_state.guias_db.keys()):
             st.session_state.guias_db[g] = consultar_latam_rapido(g)
+    st.success("¡Datos actualizados!")
     st.rerun()
 
 if st.session_state.guias_db:
+    # Mostramos la tabla general
     df = pd.DataFrame.from_dict(st.session_state.guias_db, orient="index")
     df.index.name = "Número de Guía (AWB)"
     st.dataframe(df, use_container_width=True)
+    
+    # --- SECCIÓN DE ELIMINACIÓN INDIVIDUAL ---
+    st.write("### 🗑️ Gestión de Guías Registradas")
+    st.write("Selecciona una guía de la lista para retirarla del monitoreo:")
+    
+    guias_lista = list(st.session_state.guias_db.keys())
+    guia_a_borrar = st.selectbox("Elegir Guía a Eliminar:", options=guias_lista)
+    
+    if st.button("❌ Eliminar Guía Seleccionada"):
+        if guia_a_borrar in st.session_state.guias_db:
+            del st.session_state.guias_db[guia_a_borrar]
+            st.success(f"La guía {guia_a_borrar} fue eliminada del panel.")
+            st.rerun()
 else:
     st.info("Agrega guías arriba para comenzar el monitoreo.")
 
