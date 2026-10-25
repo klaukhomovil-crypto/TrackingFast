@@ -31,7 +31,8 @@ st.subheader("1. Ingrese Número de Guía")
 
 col1, col2 = st.columns([3, 1])
 with col1:
-    numero_guia = st.text_input("Número de Guía (Formato XXX-XXXXXXXX):", value="045-56598360", placeholder="045-56598360")
+    # Campo de texto limpio por defecto para ingresar nuevas guías
+    numero_guia = st.text_input("Número de Guía (Formato XXX-XXXXXXXX):", value="", placeholder="045-56598360")
 
 with col2:
     st.write(" ")
@@ -166,7 +167,8 @@ def consultar_latam_rapido(guia):
 
 # --- FASE 2: PANEL DE MONITOREO Y GESTIÓN ---
 st.divider()
-st.subheader("2. Panel de Control y Actualización Automática")
+# Título actualizado sin el texto "(Cada 1 min)", conservando toda la funcionalidad
+data_section_title = st.subheader("2. Panel de Control y Actualización Automática")
 
 auto_refresh = st.checkbox("🔄 Activar actualización automática cada 1 minuto", value=False)
 
@@ -182,7 +184,6 @@ if actualizar_ahora and st.session_state.guias_db:
     st.rerun()
 
 if st.session_state.guias_db:
-    # Mostramos la tabla general
     df = pd.DataFrame.from_dict(st.session_state.guias_db, orient="index")
     df.index.name = "Número de Guía (AWB)"
     st.dataframe(df, use_container_width=True)
