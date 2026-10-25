@@ -65,7 +65,7 @@ def consultar_latam_rapido(guia):
     prefijo, correlativo = guia.split("-")
     url = "https://www.latamcargo.com/es/trackshipment"
     
-    # Obtenemos la hora actual con la zona horaria local (Perú/Sudamérica)
+    # Hora local (Perú/Sudamérica)
     try:
         zona_horaria = ZoneInfo("America/Lima")
         hora_consulta = datetime.now(zona_horaria).strftime("%H:%M:%S")
@@ -107,12 +107,12 @@ def consultar_latam_rapido(guia):
             page.wait_for_timeout(4500)
             
             datos_tabla = page.evaluate("""() => {
-                const rows = document.querySelectorAll('tr, .row, .table-row');
+                const rows = document.querySelectorAll('tr, .row, .table-row, li, div');
                 const results = [];
                 rows.forEach(row => {
-                    const cols = row.querySelectorAll('td, th, div');
+                    const cols = row.querySelectorAll('td, th, div, span');
                     const texts = Array.from(cols).map(c => c.innerText.trim()).filter(t => t.length > 0);
-                    if (texts.length >= 4) {
+                    if (texts.length >= 2) {
                         results.push(texts);
                     }
                 });
@@ -130,39 +130,49 @@ def consultar_latam_rapido(guia):
             else:
                 resultado["Estado"] = "📋 Procesado"
 
+            # 1. Barrido en celdas y filas
             for fila in datos_tabla:
                 fila_str = " ".join(fila)
                 for item in fila:
-                    # Capturar Origen y Destino
-                    if item in ["MIA", "LIM", "SCL", "UIO", "BOG", "EZE", "JFK", "UIO", "VVI", "MDE"]:
+                    # Origen y Destino
+                    if item in ["MIA", "LIM", "SCL", "UIO", "BOG", "EZE", "JFK", "VVI", "MDE"]:
                         if resultado["Origen"] == "N/D":
                             resultado["Origen"] = item
                         elif resultado["Destino"] == "N/D" and item != resultado["Origen"]:
                             resultado["Destino"] = item
                     
-                    # Expresión regular mejorada y flexible para vuelos (ej: LA-2481, XL0713, o similares)
-                    elif re.match(r'^[A-Z]{2,3}[\-\s]?\d{3,4}$', item, re.IGNORECASE):
-                        resultado["Vuelos"] = item.upper()
-                        
-                    # Capturar fechas ETD / ETA
+                    # Vuelos (Formato estándar o flexible)
+                    elif re.search(r'\b[A-Z]{2,3}[\-\s]?\d{3,4}\b', item, re.IGNORECASE):
+                        match_vuelo = re.search(r'\b([A-Z]{2,3}[\-\s]?\d{3,4})\b', item, re.IGNORECASE)
+                        if match_vuelo:
+                            resultado["Vuelos"] = match_vuelo.group(1).upper()
+                            
+                    # Fechas ETD / ETA
                     elif re.match(r'\d{1,2}[\-\/][A-Za-z]{3}[\-\/]\d{4}', item):
                         if resultado["ETD"] == "N/D":
                             resultado["ETD"] = item
                         elif resultado["ETA"] == "N/D":
                             resultado["ETA"] = item
                             
-                    # Capturar piezas (números enteros razonables)
+                    # Piezas
                     elif item.isdigit() and 0 < int(item) < 10000 and resultado["Piezas"] == "N/D":
                         resultado["Piezas"] = item
 
-            # Respaldo por bloques de texto si faltaron datos
-            if resultado["Origen"] == "N/D" or resultado["Vuelos"] == "N/D":
+            # 2. Respaldo agresivo sobre todo el texto de la página si quedó algún N/D
+            if resultado["Origen"] == "N/D" or resultado["Vuelos"] == "N/D" or resultado["Piezas"] == "N/D":
+                # Buscar vuelos en todo el texto plano con regex global
+                vuelos_encontrados = re.findall(r'\b([A-Z]{2,3}[\-\s]?\d{3,4})\b', texto_completo)
+                if vuelos_encontrados and resultado["Vuelos"] == "N/D":
+                    # Filtrar posibles falsos positivos comunes de aerolínea
+                    for v in vuelos_encontrados:
+                        if not v.startswith("045") and len(v) >= 5:
+                            resultado["Vuelos"] = v.upper()
+                            break
+
                 lineas = [l.strip() for l in texto_completo.split("\n") if l.strip()]
                 for l in lineas:
-                    if l in ["MIA", "LIM", "SCL"] and resultado["Origen"] == "N/D":
+                    if l in ["MIA", "LIM", "SCL", "UIO", "BOG", "EZE"] and resultado["Origen"] == "N/D":
                         resultado["Origen"] = l
-                    elif re.match(r'^[A-Z]{2,3}[\-\s]?\d{3,4}$', l, re.IGNORECASE) and resultado["Vuelos"] == "N/D":
-                        resultado["Vuelos"] = l.upper()
                     elif l.isdigit() and 10 <= int(l) <= 5000 and resultado["Piezas"] == "N/D":
                         resultado["Piezas"] = l
 
