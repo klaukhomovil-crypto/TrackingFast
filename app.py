@@ -5,6 +5,7 @@ import sys
 import pandas as pd
 import streamlit as st
 from datetime import datetime
+from zoneinfo import ZoneInfo
 from playwright.sync_api import sync_playwright
 
 st.set_page_config(page_title="Rastreador LATAM Cargo - Oficial", layout="wide")
@@ -59,11 +60,17 @@ if boton_agregar:
     else:
         st.error("❌ Formato incorrecto. Ejemplo válido: 045-56598360")
 
-# --- FUNCIÓN DE EXTRACCIÓN RÁPIDA ---
+# --- FUNCIÓN DE EXTRACCIÓN RÁPIDA Y PRECISA ---
 def consultar_latam_rapido(guia):
     prefijo, correlativo = guia.split("-")
     url = "https://www.latamcargo.com/es/trackshipment"
-    hora_consulta = datetime.now().strftime("%H:%M:%S")
+    
+    # Obtenemos la hora actual con la zona horaria local (Perú/Sudamérica)
+    try:
+        zona_horaria = ZoneInfo("America/Lima")
+        hora_consulta = datetime.now(zona_horaria).strftime("%H:%M:%S")
+    except:
+        hora_consulta = datetime.now().strftime("%H:%M:%S")
     
     resultado = {
         "Estado": "No encontrado",
@@ -84,7 +91,6 @@ def consultar_latam_rapido(guia):
             page.goto(url, timeout=25000)
             page.wait_for_timeout(1500)
             
-            # Llenar inputs de prefijo y documento
             try:
                 inputs = page.locator('input')
                 if inputs.count() >= 2:
@@ -93,7 +99,6 @@ def consultar_latam_rapido(guia):
             except:
                 pass
 
-            # Ejecutar búsqueda
             try:
                 page.click('button:has-text("Buscar"), button[type="submit"]')
             except:
@@ -127,32 +132,37 @@ def consultar_latam_rapido(guia):
 
             for fila in datos_tabla:
                 fila_str = " ".join(fila)
-                if "MIA" in fila_str or "LIM" in fila_str or "LA-" in fila_str or "XL" in fila_str:
-                    for item in fila:
-                        if item in ["MIA", "LIM", "SCL", "UIO", "BOG", "EZE", "JFK"]:
-                            if resultado["Origen"] == "N/D":
-                                resultado["Origen"] = item
-                            elif resultado["Destino"] == "N/D":
-                                resultado["Destino"] = item
-                        elif re.match(r'^(LA|XL|UC|4C)[\-\s]?\d{3,4}$', item, re.IGNORECASE):
-                            resultado["Vuelos"] = item
-                        elif re.match(r'\d{1,2}[\-\/][A-Za-z]{3}[\-\/]\d{4}', item):
-                            if resultado["ETD"] == "N/D":
-                                resultado["ETD"] = item
-                            elif resultado["ETA"] == "N/D":
-                                resultado["ETA"] = item
-                        elif item.isdigit() and 0 < int(item) < 10000 and resultado["Piezas"] == "N/D":
-                            resultado["Piezas"] = item
+                for item in fila:
+                    # Capturar Origen y Destino
+                    if item in ["MIA", "LIM", "SCL", "UIO", "BOG", "EZE", "JFK", "UIO", "VVI", "MDE"]:
+                        if resultado["Origen"] == "N/D":
+                            resultado["Origen"] = item
+                        elif resultado["Destino"] == "N/D" and item != resultado["Origen"]:
+                            resultado["Destino"] = item
+                    
+                    # Expresión regular mejorada y flexible para vuelos (ej: LA-2481, XL0713, o similares)
+                    elif re.match(r'^[A-Z]{2,3}[\-\s]?\d{3,4}$', item, re.IGNORECASE):
+                        resultado["Vuelos"] = item.upper()
+                        
+                    # Capturar fechas ETD / ETA
+                    elif re.match(r'\d{1,2}[\-\/][A-Za-z]{3}[\-\/]\d{4}', item):
+                        if resultado["ETD"] == "N/D":
+                            resultado["ETD"] = item
+                        elif resultado["ETA"] == "N/D":
+                            resultado["ETA"] = item
+                            
+                    # Capturar piezas (números enteros razonables)
+                    elif item.isdigit() and 0 < int(item) < 10000 and resultado["Piezas"] == "N/D":
+                        resultado["Piezas"] = item
 
+            # Respaldo por bloques de texto si faltaron datos
             if resultado["Origen"] == "N/D" or resultado["Vuelos"] == "N/D":
                 lineas = [l.strip() for l in texto_completo.split("\n") if l.strip()]
-                for i, l in enumerate(lineas):
-                    if l in ["MIA", "LIM"] and resultado["Origen"] == "N/D":
+                for l in lineas:
+                    if l in ["MIA", "LIM", "SCL"] and resultado["Origen"] == "N/D":
                         resultado["Origen"] = l
-                    elif l in ["MIA", "LIM"] and resultado["Destino"] == "N/D":
-                        resultado["Destino"] = l
-                    elif re.match(r'^(LA|XL|UC)[\-\s]?\d{3,4}$', l, re.IGNORECASE):
-                        resultado["Vuelos"] = l
+                    elif re.match(r'^[A-Z]{2,3}[\-\s]?\d{3,4}$', l, re.IGNORECASE) and resultado["Vuelos"] == "N/D":
+                        resultado["Vuelos"] = l.upper()
                     elif l.isdigit() and 10 <= int(l) <= 5000 and resultado["Piezas"] == "N/D":
                         resultado["Piezas"] = l
 
